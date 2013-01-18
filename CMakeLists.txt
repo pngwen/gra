@@ -18,6 +18,8 @@ add_definitions(${GTK3_CFLAGS_OTHER} ${SQLITE3_CFLAGS_OTHER})
 
 # Add an executable compiled from hello.c
 add_executable(gra main.c)
+add_executable(dataTest dataTest.c data.c)
 
 # Link the target to the GTK+ libraries
-target_link_libraries(gra ${GTK3_LIBRARIES})
+target_link_libraries(gra ${GTK3_LIBRARIES} ${SQLITE3_LIBRARIES})
+target_link_libraries(dataTest ${GTK3_LIBRARIES} ${SQLITE3_LIBRARIES})
