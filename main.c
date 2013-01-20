@@ -4,6 +4,7 @@
 int
 main(int argc, char **argv) {
   GtkWidget *window;
+  GtkWidget *button;
 
   gtk_init(&argc, &argv);
 
@@ -12,6 +13,9 @@ main(int argc, char **argv) {
   gtk_window_set_title(GTK_WINDOW(window), "Hello World");
   gtk_window_set_default_size(GTK_WINDOW(window), 300, 50);
 
+  button = gtk_button_new_with_label("Click Me");
+  gtk_container_add(GTK_CONTAINER(window), button);
+  gtk_widget_show(button);
   gtk_widget_show(window);
 
   gtk_main();

@@ -21,11 +21,13 @@
 #include <sqlite3.h>
 #include <time.h>
 #include "data.h"
+#define DB_ERROR(error)  g_set_error(error, GRA_DATA_ERROR, 1, "SQLite Error: %s", sqlite3_errmsg(db->db))
 
 static void create_schema(gra_db_t *db, GError **error);
 static gboolean has_schema(gra_db_t *db, GError **error);
 static gboolean has_schema_version(gra_db_t *db, GError **error);
 static void schema_upgrade(gra_db_t *db, GError **error);
+static gint fieldcmp(gconstpointer, gconstpointer);
 
 GQuark
 gra_data_error_quark(void) {
@@ -104,6 +106,241 @@ gra_db_close(gra_db_t *db, GError **error) {
   g_free(db);
 }
 
+
+gra_paper_t *
+gra_db_paper_load(gra_db_t *db, int id, GError **error) {
+  gra_paper_t *result;
+  sqlite3_stmt *stmt=NULL;
+  int rc;
+  
+  /* abort on previous error */
+  if(error && *error) return NULL;
+
+  rc = sqlite3_prepare_v2(db->db, "SELECT ID, FileName, PageCount, Read, Type, Author, Title, Year FROM \"Paper\" WHERE ID=?", -1, &stmt, 0);
+  if(rc != SQLITE_OK) {
+    g_set_error(error, GRA_DATA_ERROR, 1,
+                "SQLite Error: %s", sqlite3_errmsg(db->db));
+    goto cleanup;
+  }
+
+  /* finish off the query and run*/
+  sqlite3_bind_int(stmt, 1, id);
+  rc = sqlite3_step(stmt);
+  if(rc != SQLITE_ROW) {
+    g_set_error(error, GRA_DATA_ERROR, 1,
+                "SQLite Error: %s", sqlite3_errmsg(db->db));
+    goto cleanup;
+  }
+
+  /* build the result */
+  result = g_malloc(sizeof(gra_paper_t));
+  if(!result) {
+    goto cleanup;
+  }
+  result->id = sqlite3_column_int(stmt, 0);
+  result->fileName = g_strdup(sqlite3_column_text(stmt, 1));
+  result->pageCount = sqlite3_column_int(stmt, 2);
+  result->read = sqlite3_column_int(stmt, 3);
+  result->type = g_strdup(sqlite3_column_text(stmt, 4));
+  result->author = g_strdup(sqlite3_column_text(stmt, 5));
+  result->title = g_strdup(sqlite3_column_text(stmt, 6));
+  result->year = sqlite3_column_int(stmt, 7);
+  result->fields = NULL;
+  result->refs = NULL;
+  result->indb = TRUE;
+  result->changed = FALSE;
+
+  /* all done! */
+  cleanup:
+  if(stmt) sqlite3_finalize(stmt);
+  return result;
+}
+
+
+void
+gra_db_paper_save(gra_db_t *db, gra_paper_t *p, GError **error) {
+  gra_paper_t *result;
+  sqlite3_stmt *stmt=NULL;
+  int rc;
+  
+  /* abort on previous error */
+  if(error && *error) return;
+
+  /* do not save unchanged papers */
+  if(!p->changed)
+    return;
+
+  if(p->indb) {
+    /* prepare update */
+    rc = sqlite3_prepare_v2(db->db, "UPDATE \"Paper\" SET \"Read\"=?, \"Type\"=?, \"Author\"=?, \"Title\"=?, \"Year\"=? WHERE \"ID\"=?", -1, &stmt, 0);
+    if(rc == SQLITE_OK)
+      rc = sqlite3_bind_int(stmt, 6, p->id);
+  } else {
+    /* prepare insert */
+    rc = sqlite3_prepare_v2(db->db, "INSERT INTO \"Paper\" (\"Read\", \"Type\", \"Author\", \"Title\", \"Year\") VALUES(?, ?, ?, ?, ?)", -1, &stmt, 0);
+  }
+
+  /* handle statement errors */
+  if(rc != SQLITE_OK) {
+    DB_ERROR(error);
+    goto cleanup;
+  }
+
+  /* bind the values */
+  sqlite3_bind_int(stmt, 1, p->read);
+  sqlite3_bind_text(stmt, 2, p->type, -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 3, p->author, -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 4, p->title, -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 5, p->year);
+
+  /* run the query */
+  rc = sqlite3_step(stmt);
+  if(rc != SQLITE_DONE) {
+    DB_ERROR(error);
+    goto cleanup;
+  }
+
+  /* handle new rows properly */
+  if(!p->indb) {
+    p->id = sqlite3_last_insert_rowid(db->db);
+    p->indb = TRUE;
+  }
+
+  /* the database is now current */
+  p->changed = FALSE;
+
+  cleanup:
+  if(stmt) sqlite3_finalize(stmt);
+  return;
+}
+
+
+void
+gra_db_paper_delete(gra_db_t *db, gra_paper_t *p, GError **error) {
+  int rc;
+  sqlite3_stmt *stmt = NULL;
+
+  /* abort on previous error */
+  if(error && *error) return;
+
+  rc = sqlite3_prepare_v2(db->db, "DELETE FROM \"Paper\" WHERE \"ID\"=?", -1, &stmt, 0);
+  if(rc != SQLITE_OK) {
+    DB_ERROR(error);
+    goto cleanup;
+  }
+
+  /* bind and run the delete */
+  sqlite3_bind_int(stmt, 1, p->id);
+  rc = sqlite3_step(stmt);
+
+  if(rc != SQLITE_DONE) {
+    DB_ERROR(error);
+    goto cleanup;
+  }
+
+  /* this is no longer in the db, mark it as such */
+  p->indb = FALSE;
+  p->changed = TRUE;
+
+  cleanup:
+  if(stmt) sqlite3_finalize(stmt);
+  return;
+}
+
+
+void
+gra_db_paper_load_fields(gra_db_t *db, gra_paper_t *p, GError **error) {
+  int rc;
+  sqlite3_stmt *stmt = NULL;
+  gra_field_t *field = NULL;
+
+  /* abort on previous error */
+  if(error && *error) return;
+
+  rc = sqlite3_prepare_v2(db->db, "SELECT \"ID\", \"Name\", \"Value\" FROM \"Field\" WHERE \"PaperID\"=?", -1, &stmt, 0);
+  if(rc != SQLITE_OK) {
+    DB_ERROR(error);
+    goto cleanup;
+  }
+  sqlite3_bind_int(stmt, 1, p->id);
+
+  /* set up GTree */
+  if(!p->fields)
+    p->fields = g_tree_new(fieldcmp);
+  if(!p->fields) {
+    g_set_error(error, GRA_DATA_ERROR, 2, "Could not allocate binary tree for fields.");
+    goto cleanup;
+  }
+    
+
+  /* loop through results */
+  while((rc=sqlite3_step(stmt)) == SQLITE_ROW) {
+    /* create field structure */
+    field = g_malloc(sizeof(gra_field_t));
+    if(!field) {
+      g_set_error(error, GRA_DATA_ERROR, 2, "Could not allocate field.");
+      goto cleanup;
+    }
+
+    /* populate the field */
+    field->id = sqlite3_column_int(stmt, 0);
+    field->paperId = p->id;
+    field->name = g_strdup(sqlite3_column_text(stmt, 1));
+    field->value = g_strdup(sqlite3_column_text(stmt, 2));
+    field->indb = TRUE;
+    field->changed = FALSE;
+
+    /* add the field to the tree */
+    g_tree_insert(p->fields, field->name, field);
+  }
+
+  cleanup:
+  if(stmt) sqlite3_finalize(stmt);
+  return;
+}
+
+
+void
+gra_db_paper_load_refs(gra_db_t *db, gra_paper_t *p, GError **error) {
+    int rc;
+  sqlite3_stmt *stmt = NULL;
+  gra_reference_t *ref = NULL;
+
+  /* abort on previous error */
+  if(error && *error) return;
+
+  rc = sqlite3_prepare_v2(db->db, "SELECT \"ID\", \"RefPaperID\" FROM \"Reference\" WHERE \"PaperID\"=?", -1, &stmt, 0);
+  if(rc != SQLITE_OK) {
+    DB_ERROR(error);
+    goto cleanup;
+  }
+  sqlite3_bind_int(stmt, 1, p->id);
+
+
+  /* loop through results */
+  while((rc=sqlite3_step(stmt)) == SQLITE_ROW) {
+    /* create field structure */
+    ref = g_malloc(sizeof(gra_reference_t));
+    if(!ref) {
+      g_set_error(error, GRA_DATA_ERROR, 2, "Could not allocate field.");
+      goto cleanup;
+    }
+
+    /* populate the field */
+    ref->id = sqlite3_column_int(stmt, 0);
+    ref->paperId = p->id;
+    ref->refPaperId = sqlite3_column_int(stmt, 1);
+    ref->indb = TRUE;
+    ref->changed = FALSE;
+
+    /* add the reference to the list */
+    p->refs = g_list_prepend(p->refs, ref);
+  }
+
+  cleanup:
+  if(stmt) sqlite3_finalize(stmt);
+  return;
+}
 
 
 /*-------------------------------
@@ -208,7 +445,7 @@ create_schema(gra_db_t *db, GError **error) {
   db->changed = TRUE;
   
   cleanup:  
-  sqlite3_finalize(stmt);
+  if(stmt) sqlite3_finalize(stmt);
 }
 
 
@@ -291,4 +528,10 @@ schema_upgrade(gra_db_t *db, GError **error) {
   /* fail on prior errors */
   if(error && *error) return;
 
+}
+
+
+static gint
+fieldcmp(gconstpointer a, gconstpointer b) {
+  return g_strcmp0((gchar*) a, (gchar*) b);
 }

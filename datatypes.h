@@ -27,6 +27,10 @@
  *  @var gra_database_t::changed
  *  Initially set to false.  If any function alters the database,
  *  changed is set to true.
+ *
+ *  @var gra_database_t::version Version of te schema
+ *  @var gra_database_t::created Timestamp of the creation time of db.
+ *  @var gra_database_t::lastUpdate Timestamp of last update of db.
  */
 typedef struct gra_db_t {
   sqlite3 *db;
@@ -53,6 +57,7 @@ typedef struct gra_db_t {
  *  name and the value is the field struct itself.
  *  @var gra_paper_t::refs The papers referenced by this paper.
  *  @var gra_paper_t::indb True if paper is in DB, False otherwise
+ *  @var gra_paper_t::changed True if changed, false if not.
  */
 typedef struct gra_paper_t {
   int id;
@@ -66,6 +71,7 @@ typedef struct gra_paper_t {
   GTree *fields;
   GList *refs;
   gboolean indb;
+  gboolean changed;
 } gra_paper_t;
 
 
@@ -76,14 +82,34 @@ typedef struct gra_paper_t {
  *  @var gra_field_t::name The name of the field
  *  @var gra_field_t::value The value of the field
  *  @var gra_field_t::indb True if the field is in DB, False otherwise.
+ *  @var gra_field_t_t::changed True if changed, false if not.
  */
-typedef struct gra_field_t{
+typedef struct gra_field_t {
   int id;
-  int paperID;
+  int paperId;
   gchar *name;
   gchar *value;
   gboolean indb;
+  gboolean changed;
 } gra_field_t;
+
+
+/** @struct gra_reference_t
+ *  @brief A key structure which glues together a paper and its
+ *         referenced papers.
+ *  @var gra_reference_t::id ID of the reference row
+ *  @var gra_reference_t::paperId ID of the paper.
+ *  @var gra_reference_t::refPaperId ID of the cited paper
+ *  @var gra_reference_t::indb True if the field is in DB, False Otherwise.
+ *  @var gra_reference_t::changed True if changed, false otherwise.
+ */
+typedef struct gra_reference_t {
+  int id;
+  int paperId;
+  int refPaperId;
+  gboolean indb;
+  gboolean changed;
+} gra_reference_t;
 
 
 /** @struct gra_note_t
@@ -94,6 +120,7 @@ typedef struct gra_field_t{
  *  @var gra_note_t::leftNote The notes for the left hand margin.
  *  @var gra_note_t::rightNote The notes for the right hand margin.
  *  @var gra_note_t::indb True if the note is in DB, False otherwise.
+ *  @var gra_note_t::changed True if changed, false if not.
  */
 typedef struct gra_note_t {
   int id;
@@ -102,6 +129,7 @@ typedef struct gra_note_t {
   gchar *leftNote;
   gchar *rightNote;
   gboolean indb;
+  gboolean changed;
 } gra_note_t;
 
 #endif

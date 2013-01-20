@@ -50,4 +50,26 @@ void gra_db_close(gra_db_t *db, GError **error);
 
 
 /* paper functions */
+gra_paper_t *gra_db_paper_load(gra_db_t *db, int id, GError **error);
+void gra_db_paper_save(gra_db_t *db, gra_paper_t *p, GError **error);
+void gra_db_paper_delete(gra_db_t *db, gra_paper_t *p, GError **error);
+void gra_db_paper_load_fields(gra_db_t *db, gra_paper_t *p, GError **error);
+void gra_db_paper_load_refs(gra_db_t *db, gra_paper_t *p, GError **error);
+
+/* field functions */
+void gra_db_field_save(gra_db_t *db, gra_field_t *f, GError **error);
+void gra_db_field_delete(gra_db_t *db, gra_field_t *f, GError **error);
+
+/* reference functions */
+void gra_db_reference_save(gra_db_t *db, gra_reference_t *f, GError **error);
+void gra_db_reference_delete(gra_db_t *db, gra_reference_t *f, GError ** error);
+
+/* note functions */
+void gra_db_note_save(gra_db_t *db, gra_note_t *f, GError **error);
+void gra_db_note_delete(gra_db_t *db, gra_note_t *f, GError **error);
+
+/* search functions */
+GList *gra_db_search_keyword(gra_db_t *db, const gchar *keyword, GError **error);
+GList *gra_db_search_title(gra_db_t *db, const gchar *title, GError **error);
+GList *gra_db_search_author(gra_db_t *db, const gchar *author, GError **error);
 #endif
