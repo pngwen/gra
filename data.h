@@ -61,8 +61,8 @@ void gra_db_field_save(gra_db_t *db, gra_field_t *f, GError **error);
 void gra_db_field_delete(gra_db_t *db, gra_field_t *f, GError **error);
 
 /* reference functions */
-void gra_db_reference_save(gra_db_t *db, gra_reference_t *f, GError **error);
-void gra_db_reference_delete(gra_db_t *db, gra_reference_t *f, GError ** error);
+void gra_db_reference_save(gra_db_t *db, gra_reference_t *r, GError **error);
+void gra_db_reference_delete(gra_db_t *db, gra_reference_t *r, GError ** error);
 
 /* note functions */
 void gra_db_note_save(gra_db_t *db, gra_note_t *f, GError **error);

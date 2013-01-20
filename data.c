@@ -43,7 +43,7 @@ gra_db_open(const gchar *filename, GError **error) {
   int code;
 
   /* fail on prior errors */
-  if(error && *error) return;
+  if(error && *error) return NULL;
 
   /* allocate the database and open it */
   db = (gra_db_t*) g_malloc(sizeof(gra_db_t));
@@ -138,12 +138,12 @@ gra_db_paper_load(gra_db_t *db, int id, GError **error) {
     goto cleanup;
   }
   result->id = sqlite3_column_int(stmt, 0);
-  result->fileName = g_strdup(sqlite3_column_text(stmt, 1));
+  result->fileName = g_strdup((gchar*)sqlite3_column_text(stmt, 1));
   result->pageCount = sqlite3_column_int(stmt, 2);
   result->read = sqlite3_column_int(stmt, 3);
-  result->type = g_strdup(sqlite3_column_text(stmt, 4));
-  result->author = g_strdup(sqlite3_column_text(stmt, 5));
-  result->title = g_strdup(sqlite3_column_text(stmt, 6));
+  result->type = g_strdup((gchar*)sqlite3_column_text(stmt, 4));
+  result->author = g_strdup((gchar*)sqlite3_column_text(stmt, 5));
+  result->title = g_strdup((gchar*)sqlite3_column_text(stmt, 6));
   result->year = sqlite3_column_int(stmt, 7);
   result->fields = NULL;
   result->refs = NULL;
@@ -159,7 +159,6 @@ gra_db_paper_load(gra_db_t *db, int id, GError **error) {
 
 void
 gra_db_paper_save(gra_db_t *db, gra_paper_t *p, GError **error) {
-  gra_paper_t *result;
   sqlite3_stmt *stmt=NULL;
   int rc;
   
@@ -285,8 +284,8 @@ gra_db_paper_load_fields(gra_db_t *db, gra_paper_t *p, GError **error) {
     /* populate the field */
     field->id = sqlite3_column_int(stmt, 0);
     field->paperId = p->id;
-    field->name = g_strdup(sqlite3_column_text(stmt, 1));
-    field->value = g_strdup(sqlite3_column_text(stmt, 2));
+    field->name = g_strdup((gchar*) sqlite3_column_text(stmt, 1));
+    field->value = g_strdup((gchar*) sqlite3_column_text(stmt, 2));
     field->indb = TRUE;
     field->changed = FALSE;
 
@@ -302,7 +301,7 @@ gra_db_paper_load_fields(gra_db_t *db, gra_paper_t *p, GError **error) {
 
 void
 gra_db_paper_load_refs(gra_db_t *db, gra_paper_t *p, GError **error) {
-    int rc;
+  int rc;
   sqlite3_stmt *stmt = NULL;
   gra_reference_t *ref = NULL;
 
@@ -336,6 +335,187 @@ gra_db_paper_load_refs(gra_db_t *db, gra_paper_t *p, GError **error) {
     /* add the reference to the list */
     p->refs = g_list_prepend(p->refs, ref);
   }
+
+  cleanup:
+  if(stmt) sqlite3_finalize(stmt);
+  return;
+}
+
+
+/* field functions */
+void
+gra_db_field_save(gra_db_t *db, gra_field_t *f, GError **error) {
+  sqlite3_stmt *stmt = NULL;
+  int rc;
+
+  /* abort on previous error */
+  if(error && *error) return;
+
+  /* do not save unchanged fields */
+  if(!f->changed)
+    return;
+
+  if(f->indb) {
+    /* prepare update */
+    rc = sqlite3_prepare_v2(db->db, "UPDATE \"Field\" SET \"PaperID\"=?, \"Name\"=?, \"Value\"=? WHERE \"ID\"=?", -1, &stmt, 0);
+    if(rc != SQLITE_OK) {
+      DB_ERROR(error);
+      goto cleanup;
+    }
+    rc = sqlite3_bind_int(stmt, 4, f->id);
+  } else {
+    /* prepare insert */
+    rc = sqlite3_prepare_v2(db->db, "INSERT INTO \"Field\" (\"PaperID\", \"Name\", \"Value\") VALUES(?, ?, ?)", -1, &stmt, 0);
+  }
+
+  if(rc != SQLITE_OK) {
+    DB_ERROR(error);
+    goto cleanup;
+  }
+
+  /* bind the colums and run */
+  sqlite3_bind_int(stmt, 1, f->paperId);
+  sqlite3_bind_text(stmt, 2, f->name, -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 3, f->value, -1, SQLITE_TRANSIENT);
+  rc = sqlite3_step(stmt);
+
+  if(rc != SQLITE_DONE) {
+    DB_ERROR(error);
+    goto cleanup;
+  }
+
+  /* handle new rows properly */
+  if(!f->indb) {
+    f->id = sqlite3_last_insert_rowid(db->db);
+    f->indb = TRUE;
+  }
+
+  /* the database is now current */
+  f->changed = FALSE;
+  
+
+  cleanup:
+  if(stmt) sqlite3_finalize(stmt);
+  return;
+}
+
+
+void
+gra_db_field_delete(gra_db_t *db, gra_field_t *f, GError **error) {
+  int rc;
+  sqlite3_stmt *stmt = NULL;
+
+  /* abort on previous error */
+  if(error && *error) return;
+
+  rc = sqlite3_prepare_v2(db->db, "DELETE FROM \"Field\" WHERE \"ID\"=?", -1, &stmt, 0);
+  if(rc != SQLITE_OK) {
+    DB_ERROR(error);
+    goto cleanup;
+  }
+
+  /* bind and run the delete */
+  sqlite3_bind_int(stmt, 1, f->id);
+  rc = sqlite3_step(stmt);
+
+  if(rc != SQLITE_DONE) {
+    DB_ERROR(error);
+    goto cleanup;
+  }
+
+  /* this is no longer in the db, mark it as such */
+  f->indb = FALSE;
+  f->changed = TRUE;
+
+  cleanup:
+  if(stmt) sqlite3_finalize(stmt);
+  return;
+}
+
+
+/* reference functions */
+void
+gra_db_reference_save(gra_db_t *db, gra_reference_t *r, GError **error) {
+  sqlite3_stmt *stmt = NULL;
+  int rc;
+
+  /* abort on previous error */
+  if(error && *error) return;
+
+  /* do not save unchanged fields */
+  if(!r->changed)
+    return;
+
+  if(r->indb) {
+    /* prepare update */
+    rc = sqlite3_prepare_v2(db->db, "UPDATE \"Reference\" SET \"PaperID\"=?, \"RefPaperID\"=? WHERE \"ID\"=?", -1, &stmt, 0);
+    if(rc != SQLITE_OK) {
+      DB_ERROR(error);
+      goto cleanup;
+    }
+    rc = sqlite3_bind_int(stmt, 3, r->id);
+  } else {
+    /* prepare insert */
+    rc = sqlite3_prepare_v2(db->db, "INSERT INTO \"Reference\" (\"PaperID\", \"RefPaperID\") VALUES(?, ?)", -1, &stmt, 0);
+  }
+
+  if(rc != SQLITE_OK) {
+    DB_ERROR(error);
+    goto cleanup;
+  }
+
+  /* bind the colums and run */
+  sqlite3_bind_int(stmt, 1, r->paperId);
+  sqlite3_bind_int(stmt, 2, r->refPaperId);
+  rc = sqlite3_step(stmt);
+
+  if(rc != SQLITE_DONE) {
+    DB_ERROR(error);
+    goto cleanup;
+  }
+
+  /* handle new rows properly */
+  if(!r->indb) {
+    r->id = sqlite3_last_insert_rowid(db->db);
+    r->indb = TRUE;
+  }
+
+  /* the database is now current */
+  r->changed = FALSE;
+  
+
+  cleanup:
+  if(stmt) sqlite3_finalize(stmt);
+  return;
+}
+
+
+void
+gra_db_reference_delete(gra_db_t *db, gra_reference_t *r, GError ** error) {
+  int rc;
+  sqlite3_stmt *stmt = NULL;
+
+  /* abort on previous error */
+  if(error && *error) return;
+
+  rc = sqlite3_prepare_v2(db->db, "DELETE FROM \"Reference\" WHERE \"ID\"=?", -1, &stmt, 0);
+  if(rc != SQLITE_OK) {
+    DB_ERROR(error);
+    goto cleanup;
+  }
+
+  /* bind and run the delete */
+  sqlite3_bind_int(stmt, 1, r->id);
+  rc = sqlite3_step(stmt);
+
+  if(rc != SQLITE_DONE) {
+    DB_ERROR(error);
+    goto cleanup;
+  }
+
+  /* this is no longer in the db, mark it as such */
+  r->indb = FALSE;
+  r->changed = TRUE;
 
   cleanup:
   if(stmt) sqlite3_finalize(stmt);
@@ -394,7 +574,6 @@ create_schema(gra_db_t *db, GError **error) {
   int n = sizeof(script) / sizeof(script[0]);
   sqlite3_stmt *stmt=NULL;
   int rc;
-  char *zErrMsg = 0;
 
   /* fail on prior errors */
   if(error && *error) return;
@@ -465,12 +644,12 @@ has_schema(gra_db_t *db, GError **error) {
     g_set_error(error, GRA_DATA_ERROR, 1,
                 "SQLite Error: %s", sqlite3_errmsg(db->db));
 
-    return;
+    goto cleanup;
   }
 
   while(sqlite3_step(stmt) == SQLITE_ROW) {
     name = sqlite3_column_text(stmt, 0);
-    if(g_strcmp0(name, "MetaInfo")) {
+    if(g_strcmp0((gchar*)name, "MetaInfo")) {
       result = TRUE;
       break;
     }

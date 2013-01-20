@@ -2,6 +2,10 @@
 project(gra C)
 # Set the minimum version of cmake required to build this project
 cmake_minimum_required(VERSION 2.8)
+
+#compiler flags
+set(CMAKE_C_FLAGS "-Wall")
+
 # Use the package PkgConfig to detect GTK+ headers/library files
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
