@@ -19,6 +19,8 @@
 #ifndef DATATYPES_H
 #define DATATYPES_H
 
+#include <sqlite3.h>
+
 /** @struct gra_db_t
  *  @brief The database type for all data interactions.
  *  @var gra_database_t::db

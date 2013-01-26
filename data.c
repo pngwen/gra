@@ -212,11 +212,11 @@ gra_db_paper_save(gra_db_t *db, gra_paper_t *p, GError **error) {
 
   /* handle the fields, if any */
   if(p->fields) {
-    g_tree_foreach(p->fields, filedSaveVisit);
+    g_tree_foreach(p->fields, fieldSaveVisit, NULL);
   }
 
   /* handle the references, if any */
-  if(p->ref) {
+  if(p->refs) {
     for(cur=p->refs; cur; cur = g_list_next(cur)) {
       gra_db_reference_save(db, (gra_reference_t*)(cur->data), error);
     }
