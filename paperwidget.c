@@ -21,12 +21,14 @@
 #include "paperwidget.h"
 
 static void addLabelRow(gra_paper_widget *pw, const gchar* text, GtkWidget *widget);
-static void addFieldRow(gra_paper_widget *pw, GtkWidget *w1, GtkWidget *w2);
-
+static void addFieldRow(gra_paper_widget *pw);
+static void addRow(gra_paper_widget *pw, GtkWidget *w1, GtkWidget *w2);
+static void addFieldButtonClicked(GtkWidget *widget, gpointer data);
 
 gra_paper_widget *
 gra_paper_widget_new(gra_paper_t *paper) {
   gra_paper_widget *pw;
+  GtkWidget *button;
   
   
   /* TODO: Magic to glue to the paper struct */
@@ -49,6 +51,16 @@ gra_paper_widget_new(gra_paper_t *paper) {
   addLabelRow(pw, "Title", pw->title);
   addLabelRow(pw, "Author", pw->author);
   addLabelRow(pw, "Year", pw->year);
+  addFieldRow(pw);
+
+  /*add the add button */
+  button = gtk_button_new_with_label("Add Field");
+  gtk_box_pack_start(GTK_BOX(pw->widget), button, FALSE, FALSE, 0);
+  gtk_widget_show(button);
+  g_signal_connect(G_OBJECT(button),
+                   "clicked",
+                   G_CALLBACK(addFieldButtonClicked),
+                   pw);
 
   /* show the last widet in the container.
      Caller is responsible for the container */
@@ -68,22 +80,44 @@ addLabelRow(gra_paper_widget *pw, const gchar* text, GtkWidget *widget) {
   /* create the label, then then the field row */
   label = gtk_label_new(text);
   gtk_misc_set_alignment(GTK_MISC(label), 1, 0.5);
-  addFieldRow(pw, label, widget);
+  addRow(pw, label, widget);
 }
 
 
 static void
-addFieldRow(gra_paper_widget *pw, GtkWidget *w1, GtkWidget *w2) {
+addFieldRow(gra_paper_widget *pw) {
+  GtkWidget *field, *value;
+
+  /* create the combo boxes */
+  field = gtk_combo_box_new_with_entry();
+  value = gtk_entry_new();
+
+  addRow(pw, field, value);
+}
+
+
+static void
+addRow(gra_paper_widget *pw, GtkWidget *w1, GtkWidget *w2) {
   GtkWidget *row;
 
   /* allocate this row */
-  row = gtk_hbox_new(TRUE, 2);
-
-  gtk_box_pack_start(GTK_BOX(row), w1, TRUE, TRUE, 0);
+  row = gtk_hbox_new(FALSE, 2);
+  gtk_widget_set_size_request(w1, 80, -1);
+  gtk_box_pack_start(GTK_BOX(row), w1, FALSE, FALSE, 0);
   gtk_box_pack_start(GTK_BOX(row), w2, TRUE, TRUE, 0);
   gtk_box_pack_start(GTK_BOX(pw->fieldBox), row, FALSE, FALSE, 0);
   gtk_widget_show(w1);
   gtk_widget_show(w2);
   gtk_widget_show(row);
 
+}
+
+
+static void
+addFieldButtonClicked(GtkWidget *widget, gpointer data) {
+  gra_paper_widget *pw;
+
+  pw = (gra_paper_widget *) data;
+
+  addFieldRow(pw);
 }
