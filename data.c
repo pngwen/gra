@@ -28,6 +28,7 @@ static gboolean has_schema(gra_db_t *db, GError **error);
 static gboolean has_schema_version(gra_db_t *db, GError **error);
 static void schema_upgrade(gra_db_t *db, GError **error);
 static gint fieldcmp(gconstpointer, gconstpointer);
+static gboolean fieldSaveVisit(gpointer, gpointer, gpointer);
 
 GQuark
 gra_data_error_quark(void) {
@@ -161,6 +162,7 @@ void
 gra_db_paper_save(gra_db_t *db, gra_paper_t *p, GError **error) {
   sqlite3_stmt *stmt=NULL;
   int rc;
+  GList *cur;
   
   /* abort on previous error */
   if(error && *error) return;
@@ -208,6 +210,18 @@ gra_db_paper_save(gra_db_t *db, gra_paper_t *p, GError **error) {
   /* the database is now current */
   p->changed = FALSE;
 
+  /* handle the fields, if any */
+  if(p->fields) {
+    g_tree_foreach(p->fields, filedSaveVisit);
+  }
+
+  /* handle the references, if any */
+  if(p->ref) {
+    for(cur=p->refs; cur; cur = g_list_next(cur)) {
+      gra_db_reference_save(db, (gra_reference_t*)(cur->data), error);
+    }
+  }
+  
   cleanup:
   if(stmt) sqlite3_finalize(stmt);
   return;
@@ -713,4 +727,13 @@ schema_upgrade(gra_db_t *db, GError **error) {
 static gint
 fieldcmp(gconstpointer a, gconstpointer b) {
   return g_strcmp0((gchar*) a, (gchar*) b);
+}
+
+
+static gboolean
+fieldSaveVisit(gpointer key, gpointer value, gpointer data) {
+  /* TODO: Need error reporting mecahnism for this phase.  Danger! */
+  gra_db_field_save((gra_db_t*) data, (gra_field_t *) value, NULL);
+
+  return FALSE;
 }
